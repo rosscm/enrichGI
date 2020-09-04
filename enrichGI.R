@@ -27,8 +27,8 @@ parser$add_argument("--MAX_GENE", type="integer", default = 500,
 parser$add_argument("--SIG_FDR", type="integer", default = 0.05,
                     help="FDR threshold to define significant pathway enrichment [default %(default)s]")
 parser$add_argument("--SET_PERM", type="integer", default = 10000,
-                    help = paste("Number of permutations to run to determine enrichment significance.",
-                                 "Minimal possible nominal p-value ~= 1/SET_PERM [default %(default)s]"))
+                    help=paste("Number of permutations to run to determine enrichment significance.",
+                               "Minimal possible nominal p-value ~= 1/SET_PERM [default %(default)s]"))
 parser$add_argument("--SET_SEED", type="integer", default = 42,
                     help="Seed value to maintain result consistency [default %(default)s]")
 args <- parser$parse_args()
@@ -60,12 +60,15 @@ if (!file.exists(annotation_file)) {
 if (!dir.exists(output_folder)) { dir.create(output_folder) }
 
 # Generate dated subfolder if applicable (i.e. date scores were generated)
-# Helps to systematically organise results
+# Otherwise use current date
 fdate <- grep("^20[0-9][0-9]", unlist(strsplit(score_file, "/")), value = TRUE)
 if (length(fdate)) {
   output_folder <- paste(output_folder, fdate, sep = "/")
-  if (!dir.exists(output_folder)) { dir.create(output_folder) }
+} else {
+  dt <- format(Sys.Date(), "20%y%m%d")
+  output_folder <- paste(output_folder, dt, sep = "/")
 }
+if (!dir.exists(output_folder)) { dir.create(output_folder) }
 
 # Print user parameters to console
 cat(sprintf("Hostname: %s\n", Sys.info()["nodename"]))
@@ -150,7 +153,7 @@ for (i in 1:ncol(score_run)) {
 
   # Run GSEA
   set.seed(SET_SEED)
-  gsea <- fgsea(stats = gi_rank, pathways = pathways2, nperm = SET_PERM)
+  gsea <- fgsea(stats = gi_rank, pathways = pathways2)
 
   # Filtering for significant pathways
   gsea_sig <- as.data.table(filter(gsea, padj <= SIG_FDR))
