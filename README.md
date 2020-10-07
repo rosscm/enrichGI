@@ -43,8 +43,6 @@ the inputs should be formatted (see files provided in `input` for examples).
 **Enrichment FDR** (`--SIG_FDR`): Integer specifying FDR threshold to define significant pathway enrichment.
 *OPTIONAL*: default 0.05.
 
-*NO NEED TO WORRY ABOUT THE FOLLOWING PARAMETERS*
-
 **Permutations** (`--SET_PERM`): Integer specifying number of permutations to run to determine enrichment significance.
 	Minimal possible nominal p-value ~= 1/`SET_PERM`.
 *OPTIONAL*: default "10000".
