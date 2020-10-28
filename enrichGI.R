@@ -59,17 +59,6 @@ if (!file.exists(annotation_file)) {
 # Generate parent output folder if it doesn't already exist
 if (!dir.exists(output_folder)) { dir.create(output_folder) }
 
-# Generate dated subfolder if applicable (i.e. date scores were generated)
-# Otherwise use current date
-fdate <- grep("^20[0-9][0-9]", unlist(strsplit(score_file, "/")), value = TRUE)
-if (length(fdate)) {
-  output_folder <- paste(output_folder, fdate, sep = "/")
-} else {
-  dt <- format(Sys.Date(), "20%y%m%d")
-  output_folder <- paste(output_folder, dt, sep = "/")
-}
-if (!dir.exists(output_folder)) { dir.create(output_folder) }
-
 # Print user parameters to console
 cat(sprintf("Hostname: %s\n", Sys.info()["nodename"]))
 cat(sprintf("Start time: %s\n", format(Sys.time(), "%a %b %d %X %Y")))
@@ -79,7 +68,7 @@ cat(sprintf("Pathway annotation file: %s\n", annotation_file))
 cat(sprintf("GSEA parameters:\nPermutations: %i\nPathway size: %i-%i\n\n", SET_PERM, MIN_GENE, MAX_GENE))
 
 ######
-# score SCORES
+# READ SCORES
 ######
 
 # Read in score data
@@ -200,9 +189,15 @@ for (i in 1:ncol(score_run)) {
     ######
 
     # Combine positive and negative results
-    if (nrow(gsea_pos)) { gsea_pos$sign <- "positive" }
-    if (nrow(gsea_neg)) { gsea_neg$sign <- "negative" }
-    gsea_res <- rbind(gsea_pos, gsea_neg)
+    gsea_res <- c()
+    if (nrow(gsea_pos)) {
+      gsea_pos$sign <- "positive"
+      gsea_res <- rbind(gsea_res, gsea_pos)
+    }
+    if (nrow(gsea_neg)) {
+      gsea_neg$sign <- "negative"
+      gsea_res <- rbind(gsea_res, gsea_neg)
+    }
 
     # Get character vector of pathways
     pathway_res <- as.character(unlist(gsea_res[,"pathway"]))
