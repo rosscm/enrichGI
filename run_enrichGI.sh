@@ -28,7 +28,11 @@ else
   mkdir $outdir
 fi
 
-# Run enrichGI.R per on score file
+# Run enrichGI on score file
 Rscript enrichGI.R -i ${indir}/*masterTable.txt \
                    -a ${annotation_file} \
                    -o ${outdir}
+
+# Combine all CrisprDB-style plots to single PDF via ImageMagick
+plots=$(ls */*/*dbstyle.png)
+convert ${plots} ${crispr_set}_residual_scatterplots.pdf
