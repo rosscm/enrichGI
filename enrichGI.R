@@ -74,7 +74,7 @@ cat(sprintf("GSEA parameters:\nPermutations: %i\nPathway size: %i-%i\n\n", SET_P
 # Read in score data
 suppressWarnings({
   score <- fread(score_file, stringsAsFactors = FALSE, data.table = FALSE)
-  rownames(score) <- score$V1; score$V1 <- NULL
+  rownames(score) <- score[,1]; score[,1] <- NULL
 })
 cat("---------------------------------------\n")
 cat(sprintf("Read score data for %i genes across %i screens\n", nrow(score), ncol(score)))
