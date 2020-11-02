@@ -106,6 +106,7 @@ if (!ncol(score_run)) {
 ######
 
 # Read in pathway file as a list
+cat(sprintf("Reading pathway annotation file: %s\n", annotation_file))
 pathways <- gmtPathways(annotation_file)
 
 # Remove annotation source information from pathway names
@@ -113,11 +114,15 @@ names(pathways) <- gsub("\\%..*", "", names(pathways))
 
 # Filter for pathway size (MIN_GENE, MAX_GENE)
 pathway_size <- lapply(pathways, length)
-pathways2 <- pathways[-which(pathway_size < MIN_GENE | pathway_size > MAX_GENE)]
+pathways2 <- pathways[which(pathway_size > MIN_GENE | pathway_size < MAX_GENE)]
 
-cat("\n---------------------------------------\n")
-cat(sprintf("Testing %s pathways from %s total (min size %s, max size %s)\n\n",
-  length(pathways2), length(pathways), MIN_GENE, MAX_GENE))
+if (!length(pathways2)) {
+  stop("No pathways left after size filtering! Choose new size filters")
+} else {
+  cat("\n---------------------------------------\n")
+  cat(sprintf("Testing %s pathways from %s total (min size %s, max size %s)\n\n",
+    length(pathways2), length(pathways), MIN_GENE, MAX_GENE))
+}
 
 ######
 # GSEA
@@ -191,16 +196,22 @@ for (i in 1:ncol(score_run)) {
     # Combine positive and negative results
     gsea_res <- c()
     if (nrow(gsea_pos)) {
-      gsea_pos$sign <- "positive"
+      gsea_pos$sign <- "Positive"
       gsea_res <- rbind(gsea_res, gsea_pos)
     }
     if (nrow(gsea_neg)) {
-      gsea_neg$sign <- "negative"
+      gsea_neg$sign <- "Negative"
       gsea_res <- rbind(gsea_res, gsea_neg)
     }
 
     # Get character vector of pathways
     pathway_res <- as.character(unlist(gsea_res[,"pathway"]))
+
+    # Add column to gsea_res of number of leadingEdge genes in pathway
+    gsea_res$count <- ""
+    for (i in 1:nrow(gsea_res)) {
+      gsea_res$count[i] <- length(as.character(unlist(gsea_res[i,"leadingEdge"])))
+    }
 
     # Draw out
     plot_file1 <- sprintf("%s_leadingEdge.pdf", out_file)
@@ -232,14 +243,14 @@ for (i in 1:ncol(score_run)) {
     gi_rank_df <- as.data.frame(gi_rank)
     gi_rank_df$Gene <- rownames(gi_rank_df)
     rownames(gi_rank_df) <- NULL
-    colnames(gi_rank_df)[1] <- "score_score"
+    colnames(gi_rank_df)[1] <- "gene_score"
 
     # Prevent merge from re-arranging columns using join (2018-11-08)
     final <- left_join(gsea_plot, gi_rank_df, by = "Gene")
 
     # Add sign, count, and FDR information
-    gsea_sign <- gsea_res[,c("pathway", "padj", "size", "sign")]
-    colnames(gsea_sign) <- c("Pathway", "FDR", "Count", "Sign")
+    gsea_sign <- gsea_res[,c("pathway", "padj", "size", "count", "sign")]
+    colnames(gsea_sign) <- c("Pathway", "FDR", "Size", "Count", "Sign")
     final <- left_join(final, gsea_sign, by = "Pathway")
 
     # Prevent ggplot from re-arranging pathway/gene levels
@@ -253,7 +264,7 @@ for (i in 1:ncol(score_run)) {
     # Plot
     p2 <- ggplot(final, aes(Gene, Pathway)) +
           facet_grid(. ~ Sign, scales = "free", space = "free") +
-          geom_tile(aes(fill = score_score), colour = "white") +
+          geom_tile(aes(fill = gene_score), colour = "white") +
           scale_fill_gradient2(low = muted("#386cb0"), high = "#ef3b2c") +
           theme_bw(base_size = 14) +
           theme(panel.background = element_rect(fill = "white"),
@@ -278,15 +289,8 @@ for (i in 1:ncol(score_run)) {
     final2 <- unique(final[,-c(1,3)])
     final2$Pathway <- as.character(final2$Pathway)
 
-    # Merge enrichment data with pathway size to calculate geneRatio
-    ## (n genes in pathway / size of pathway)
-    pathway_size_df <- melt(pathway_size)
-    colnames(pathway_size_df) <- c("Size", "Pathway")
-    pathway_size_df$Pathway <- as.character(pathway_size_df$Pathway)
-    final2 <- left_join(final2, pathway_size_df, by = "Pathway")
-
     # Calculate geneRatio
-    final2$geneRatio <- final2$Count / final2$Size
+    final2$geneRatio <- as.numeric(final2$Count) / as.numeric(final2$Size)
 
     # Draw out dotplots
     plot_file3 <- sprintf("%s_dotplot.pdf", out_file)
@@ -301,6 +305,7 @@ for (i in 1:ncol(score_run)) {
             ylab(NULL) +
             ggtitle(query_i)
 
-   ggsave(plot_file3, p3, width = 20, height = length(unique(final$Pathway)) * 0.25, limitsize = FALSE)
+   ggsave(plot_file3, p3, width = 12, limitsize = FALSE,
+          height = length(unique(final2$Pathway)) * 0.5)
   }
 }
