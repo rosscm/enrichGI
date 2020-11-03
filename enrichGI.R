@@ -114,7 +114,7 @@ names(pathways) <- gsub("\\%..*", "", names(pathways))
 
 # Filter for pathway size (MIN_GENE, MAX_GENE)
 pathway_size <- lapply(pathways, length)
-pathways2 <- pathways[which(pathway_size > MIN_GENE | pathway_size < MAX_GENE)]
+pathways2 <- pathways[which(pathway_size > MIN_GENE & pathway_size < MAX_GENE)]
 
 if (!length(pathways2)) {
   stop("No pathways left after size filtering! Choose new size filters")
@@ -122,6 +122,16 @@ if (!length(pathways2)) {
   cat("\n---------------------------------------\n")
   cat(sprintf("Testing %s pathways from %s total (min size %s, max size %s)\n\n",
     length(pathways2), length(pathways), MIN_GENE, MAX_GENE))
+}
+
+# Get annotation source to add to file names
+annotation_sources <- c("GO", "KEGG", "Reactome", "NetPath", "Corum")
+annotation_name <- unlist(strsplit(basename(annotation_file), split = "_"))
+annotation_source <- unique(grep(paste(annotation_sources, collapse = "|"),
+    annotation_name, ignore.case = TRUE, value = TRUE))
+
+if (!length(annotation_source)) {
+  annotation_source <- "genericPathways"
 }
 
 ######
@@ -172,7 +182,7 @@ for (i in 1:ncol(score_run)) {
     if (!dir.exists(query_folder)) { dir.create(query_folder) }
 
     # Main output file names
-    out_file <- sprintf("%s/gsea_%s", query_folder, query_i)
+    out_file <- sprintf("%s/gsea_%s_%s", query_folder, query_i, annotation_source)
 
     ######
     # PATHWAY ENRICHMENT TABLES
@@ -305,7 +315,7 @@ for (i in 1:ncol(score_run)) {
             ylab(NULL) +
             ggtitle(query_i)
 
-   ggsave(plot_file3, p3, width = 12, limitsize = FALSE,
-          height = length(unique(final2$Pathway)) * 0.5)
+   ggsave(plot_file3, p3, width = 20, limitsize = FALSE,
+          height = length(unique(final2$Pathway)) * 0.35)
   }
 }
