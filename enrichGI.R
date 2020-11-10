@@ -5,7 +5,8 @@
 ######
 
 # Loads all packages in a way that allows exporting to child environments
-packages <- c("fgsea", "data.table", "dplyr", "reshape2", "ggplot2", "scales", "forcats", "openxlsx", "argparse")
+packages <- c("fgsea", "data.table", "dplyr", "reshape2", "ggplot2", "scales",
+              "forcats", "openxlsx", "Hmisc", "ggthemes", "argparse")
 for (p in packages) {
   suppressPackageStartupMessages(library(p, character.only = TRUE))
 }
@@ -88,7 +89,7 @@ if (length(which(query == "all")) == TRUE) {
     cat(sprintf("Subsetting for screen %s\n", query))
     score_run <- score[,grep(query, colnames(score), ignore.case = TRUE), drop = FALSE]
   } else {
-    cat(sprintf("Subsetting for screens %s\n", paste(query, collapse=", ")))
+    cat(sprintf("* Subsetting for screens %s\n", paste(query, collapse=", ")))
     query_match <- paste(query, collapse="|")
     score_run <- score[,grep(query_match, colnames(score), ignore.case = TRUE), drop = FALSE]
   }
@@ -98,7 +99,7 @@ if (length(which(query == "all")) == TRUE) {
 if (!ncol(score_run)) {
   stop("No data left after subsetting (check spelling)\n")
 } else {
-  cat(sprintf("* Found %s screens (%s)\n", ncol(score_run), paste(colnames(score_run), collapse=", ")))
+  cat(sprintf("* Found %s screen(s) (%s)\n", ncol(score_run), paste(colnames(score_run), collapse=", ")))
 }
 
 ######
@@ -106,7 +107,6 @@ if (!ncol(score_run)) {
 ######
 
 # Read in pathway file as a list
-cat(sprintf("Reading pathway annotation file: %s\n", annotation_file))
 pathways <- gmtPathways(annotation_file)
 
 # Remove annotation source information from pathway names
@@ -258,9 +258,9 @@ for (i in 1:ncol(score_run)) {
     # Prevent merge from re-arranging columns using join (2018-11-08)
     final <- left_join(gsea_plot, gi_rank_df, by = "Gene")
 
-    # Add sign, count, and FDR information
-    gsea_sign <- gsea_res[,c("pathway", "padj", "size", "count", "sign")]
-    colnames(gsea_sign) <- c("Pathway", "FDR", "Size", "Count", "Sign")
+    # Add additional enrichment info
+    gsea_sign <- gsea_res[,c("pathway", "padj", "NES", "size", "count", "sign")]
+    colnames(gsea_sign) <- c("Pathway", "FDR", "NES", "Size", "Count", "Sign")
     final <- left_join(final, gsea_sign, by = "Pathway")
 
     # Prevent ggplot from re-arranging pathway/gene levels
@@ -279,7 +279,7 @@ for (i in 1:ncol(score_run)) {
           theme_bw(base_size = 14) +
           theme(panel.background = element_rect(fill = "white"),
                 panel.grid = element_blank(),
-                plot.title = element_text(size = 15, face="bold", hjust = 0.5),
+                plot.title = element_text(size = 15, face = "bold", hjust = 0.5),
                 axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8, face = "bold"),
                 axis.text.y = element_text(size = 8, hjust = 1, vjust = 1, face = "bold"),
                 axis.title = element_text(size = 12),
@@ -288,8 +288,8 @@ for (i in 1:ncol(score_run)) {
           ggtitle(query_i) +
           labs(x = "Leading edge gene", y = "Pathway")
 
-    ggsave(plot_file2, p2, width = length(unique(final$Gene)) * 0.7,
-           height = length(unique(final$Pathway)) * 0.2, limitsize = FALSE)
+    #ggsave(plot_file2, p2, width = length(unique(final$Gene)) * 0.7,
+    #       height = length(unique(final$Pathway)) * 0.2, limitsize = FALSE)
 
     ######
     # DOTPLOT
@@ -302,20 +302,41 @@ for (i in 1:ncol(score_run)) {
     # Calculate geneRatio
     final2$geneRatio <- as.numeric(final2$Count) / as.numeric(final2$Size)
 
-    # Draw out dotplots
-    plot_file3 <- sprintf("%s_dotplot.pdf", out_file)
-    cat(sprintf("  => plotting enrichment dotplot to %s.\n", basename(plot_file3)))
+    # Uncapitalize pathway names
+    final2$Pathway <- tolower(final2$Pathway)
+    final2$Pathway <- capitalize(final2$Pathway)
 
-    # Plot
-    p3 <- ggplot(final2, aes(x = geneRatio, y = fct_reorder(Pathway, geneRatio))) +
-            facet_grid(. ~ Sign) +
-            geom_point(aes(size = geneRatio, color = FDR)) +
-            theme_bw(base_size = 14) +
-            scale_colour_gradient(limits = c(0, SIG_FDR), low = "red") +
-            ylab(NULL) +
-            ggtitle(query_i)
+    # Loop through negative/positive enrichments
+    for (res_sign in unique(final2$Sign)) {
 
-   ggsave(plot_file3, p3, width = 20, limitsize = FALSE,
-          height = length(unique(final2$Pathway)) * 0.35)
+      # Filter for GI data corresponding to sign
+      to_plot <- filter(final2, Sign == res_sign)
+      point_col <- ifelse(res_sign == "Negative", "cornflowerblue", "goldenrod1")
+
+      # Plot dot plot
+      p3 <- ggplot(to_plot, aes(x = -log10(FDR),
+                                y = fct_reorder(Pathway, -log10(FDR)),
+                                colour = Sign)) +
+              geom_point(aes(size = abs(NES))) +
+              labs(y = NULL,
+                   title = sprintf("%s (%s)", query_i, annotation_source),
+                   colour = "Genetic interaction",
+                   size = "|Normalized\nenrichment score|") +
+              scale_colour_manual(values = point_col) +
+              theme_few(base_size = 14) +
+              theme(plot.title = element_text(hjust = 0.5),
+                    legend.title = element_text(size = 10),
+                    legend.text = element_text(size = 10),
+                    legend.key.size = unit(0.1, "line"),
+                    aspect.ratio = 10/3)
+
+      # Estimate plot height
+      p_height <- length(unique(to_plot$Pathway)) * 0.25
+
+      # Draw out plots
+      plot_file3 <- sprintf("%s_dotplot_%s.pdf", out_file, res_sign)
+      cat(sprintf("  => plotting enrichment dotplot to %s.\n", basename(plot_file3)))
+      ggsave(plot_file3, p3, width = 15, height = p_height, limitsize = FALSE)
+    }
   }
 }
