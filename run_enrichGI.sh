@@ -6,10 +6,12 @@
 ## 2) crispr_path: path to folder where gene scores are stored
 ## 2) crispr_path: name of child folder where gene scores are stored
 ## 3) anno_path: path to folder where annotation files are stored
-crispr_type="mgin"
-#crispr_path="/Users/catherineross/projects/qGI/output_data"
-crispr_path="/Users/catherineross/projects/GIN/scripts/crispRscore/output"
-crispr_set="20201102_MGIN"
+#crispr_type="mgin"
+#crispr_path="/Users/catherineross/projects/GIN/scripts/crispRscore/output"
+#crispr_set="20201102_MGIN"
+crispr_type="gin"
+crispr_path="/Users/catherineross/projects/qGI/output_data"
+crispr_set="20201028"
 anno_path="/Users/catherineross/projects/GIN/anno"
 
 # I/O
@@ -36,6 +38,7 @@ fi
 # Run enrichGI on score file
 Rscript enrichGI.R -i ${input_file} \
                    -a ${annotation_file} \
-                   --MIN_GENE 0 \
-                   --MAX_GENE 10000 \
-                   -o ${outdir}
+                   --MIN_GENE 10 \
+                   --MAX_GENE 500 \
+                   -o ${outdir} \
+                   -q 287
