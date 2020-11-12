@@ -316,18 +316,20 @@ for (i in 1:ncol(score_run)) {
       # Plot dot plot
       p3 <- ggplot(to_plot, aes(x = -log10(FDR),
                                 y = fct_reorder(Pathway, -log10(FDR)),
-                                colour = Sign)) +
-              geom_point(aes(size = abs(NES))) +
-              labs(y = NULL,
+                                fill = Sign)) +
+              geom_point(aes(size = abs(NES)), shape = 21, colour = "black") +
+              labs(y = NULL, x = "-log10(FDR) enrichment",
                    title = sprintf("%s (%s)", query_i, annotation_source),
                    colour = "Genetic interaction",
-                   size = "|Normalized\nenrichment score|") +
-              scale_colour_manual(values = point_col) +
+                   size = "Fold enrichment") +
+              scale_fill_manual(values = point_col) +
               theme_few(base_size = 14) +
               theme(plot.title = element_text(hjust = 0.5),
                     legend.title = element_text(size = 10),
                     legend.text = element_text(size = 10),
                     legend.key.size = unit(0.1, "line"),
+                    panel.grid.major.y = element_line(linetype = "dotted",
+                                                      colour = "lightgrey"),
                     aspect.ratio = 10/3)
 
       # Estimate plot height
