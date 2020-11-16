@@ -27,9 +27,6 @@ parser$add_argument("--MAX_GENE", type="integer", default = 500,
                     help="Maximum number of genes to be considered in a pathway [default %(default)s]")
 parser$add_argument("--SIG_FDR", type="integer", default = 0.05,
                     help="FDR threshold to define significant pathway enrichment [default %(default)s]")
-parser$add_argument("--SET_PERM", type="integer", default = 10000,
-                    help=paste("Number of permutations to run to determine enrichment significance.",
-                               "Minimal possible nominal p-value ~= 1/SET_PERM [default %(default)s]"))
 parser$add_argument("--SET_SEED", type="integer", default = 42,
                     help="Seed value to maintain result consistency [default %(default)s]")
 args <- parser$parse_args()
@@ -46,7 +43,6 @@ query <- strsplit(args$query, ",")[[1]]
 MIN_GENE <- args$MIN_GENE
 MAX_GENE <- args$MAX_GENE
 SIG_FDR <- args$SIG_FDR
-SET_PERM <- args$SET_PERM
 SET_SEED <- args$SET_SEED
 
 # Check if required files exist
@@ -66,7 +62,7 @@ cat(sprintf("Start time: %s\n", format(Sys.time(), "%a %b %d %X %Y")))
 cat(sprintf("Working directory: %s\nOutput directory: %s\n", getwd(), output_folder))
 cat(sprintf("Gene-level genetic interaction score file: %s\n", score_file))
 cat(sprintf("Pathway annotation file: %s\n", annotation_file))
-cat(sprintf("GSEA parameters:\nPermutations: %i\nPathway size: %i-%i\n\n", SET_PERM, MIN_GENE, MAX_GENE))
+cat(sprintf("GSEA parameters:\nPathway size: %i-%i\n\n", MIN_GENE, MAX_GENE))
 
 ######
 # READ SCORES
@@ -306,23 +302,28 @@ for (i in 1:ncol(score_run)) {
     final2$Pathway <- tolower(final2$Pathway)
     final2$Pathway <- capitalize(final2$Pathway)
 
+    # Convert Sign to factor format to prevent unwanted point re-arranging
+    final2$Sign <- factor(final2$Sign, levels = unique(final2$Sign))
+
     # Loop through negative/positive enrichments
     for (res_sign in unique(final2$Sign)) {
 
       # Filter for GI data corresponding to sign
       to_plot <- filter(final2, Sign == res_sign)
-      point_col <- ifelse(res_sign == "Negative", "cornflowerblue", "goldenrod1")
+
+      # Set point fill
+      p_fill <- ifelse(res_sign == "Negative", "cornflowerblue", "goldenrod1")
 
       # Plot dot plot
-      p3 <- ggplot(to_plot, aes(x = -log10(FDR),
-                                y = fct_reorder(Pathway, -log10(FDR)),
+      p3 <- ggplot(to_plot, aes(x = NES,
+                                y = fct_reorder(Pathway, NES),
                                 fill = Sign)) +
-              geom_point(aes(size = abs(NES)), shape = 21, colour = "black") +
-              labs(y = NULL, x = "-log10(FDR) enrichment",
+              geom_point(aes(size = -log10(FDR)), shape = 21, colour = "black") +
+              labs(y = NULL, x = "Fold enrichment",
                    title = sprintf("%s (%s)", query_i, annotation_source),
-                   colour = "Genetic interaction",
-                   size = "Fold enrichment") +
-              scale_fill_manual(values = point_col) +
+                   fill = "Genetic interaction",
+                   size = "-log10(FDR)") +
+              scale_fill_manual(values = p_fill) +
               theme_few(base_size = 14) +
               theme(plot.title = element_text(hjust = 0.5),
                     legend.title = element_text(size = 10),
@@ -340,5 +341,50 @@ for (i in 1:ncol(score_run)) {
       cat(sprintf("  => plotting enrichment dotplot to %s.\n", basename(plot_file3)))
       ggsave(plot_file3, p3, width = 15, height = p_height, limitsize = FALSE)
     }
+
+    ######
+    # MERGED DOTPLOT
+    ######
+
+    # Grab top 20 positive / negative enrichments
+    top_pos <- final2[order(final2$NES, decreasing = TRUE),][1:20,]
+    top_neg <- final2[order(final2$NES, decreasing = FALSE),][1:20,]
+    top_plot <- rbind(top_pos, top_neg)
+
+    # Set point fill
+    p_fill <- unique(ifelse(top_plot$Sign == "Negative", "cornflowerblue", "goldenrod1"))
+
+    # Set x-axis limits so points aren't cut off from plot window
+    xmin <- floor(min(top_plot$NES))
+    xmax <- ceiling(max(top_plot$NES))
+
+    # Plot merged dot plot
+    p4 <- ggplot(top_plot, aes(x = NES,
+                               y = fct_reorder(Pathway, NES),
+                               fill = Sign)) +
+            geom_point(aes(size = -log10(FDR)), shape = 21, colour = "black") +
+            geom_vline(xintercept = 0, linetype = "dotted", colour = "black", size = 0.75) +
+            labs(y = NULL, x = "Fold enrichment",
+                 title = sprintf("%s (%s)", query_i, annotation_source),
+                 fill = "Genetic interaction",
+                 size = "-log10(FDR)") +
+            xlim(xmin, xmax) +
+            scale_fill_manual(values = p_fill) +
+            theme_few(base_size = 14) +
+            theme(plot.title = element_text(hjust = 0.5),
+                  legend.title = element_text(size = 10),
+                  legend.text = element_text(size = 10),
+                  legend.key.size = unit(0.1, "line"),
+                  panel.grid.major.y = element_line(linetype = "dotted",
+                                                    colour = "lightgrey"),
+                  aspect.ratio = 10/3)
+
+      # Estimate plot height
+      p_height <- length(unique(top_plot$Pathway)) * 0.25
+
+      # Draw out plot
+      plot_file4 <- sprintf("%s_dotplot_merged.pdf", out_file)
+      cat(sprintf("  => plotting enrichment dotplot to %s.\n", basename(plot_file4)))
+      ggsave(plot_file4, p4, width = 15, height = p_height, limitsize = FALSE)
   }
 }
