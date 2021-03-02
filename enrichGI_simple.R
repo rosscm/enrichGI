@@ -8,9 +8,9 @@ for (p in packages) {
 
 # ============================= #
 # User inputs (change these)
-input_file <- "~/projects/GIN/data/forKuheli/CHEM022_032_drugz.xlsx"
-annotation_file <- "~/projects/GIN/anno/Human_GO_bp_no_GO_iea_October_01_2018_symbol.gmt"
-output_folder <- sprintf("~/projects/GIN/res/%s_out_forKuheli_GSEA", format(Sys.Date(), "20%y%m%d"))
+input_file <- "~/projects/data/forKuheli/CHEM022_032_drugz.xlsx"
+annotation_file <- "~/projects/anno/Human_GO_bp_no_GO_iea_October_01_2018_symbol.gmt"
+output_folder <- sprintf("~/res/%s_out_forKuheli_GSEA", format(Sys.Date(), "20%y%m%d"))
 
 # Parameters
 gene_col = "gene" # column with gene symbols

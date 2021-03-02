@@ -4,9 +4,9 @@
 # LOAD PACKAGES
 ######
 
-# Loads all packages in a way that allows exporting to child environments
+# Load packages
 packages <- c("fgsea", "data.table", "dplyr", "reshape2", "ggplot2", "scales",
-              "forcats", "openxlsx", "Hmisc", "ggthemes", "argparse")
+              "forcats", "openxlsx", "scales", "ggthemes", "argparse")
 for (p in packages) {
   suppressPackageStartupMessages(library(p, character.only = TRUE))
 }
@@ -104,6 +104,7 @@ if (!ncol(score_run)) {
 
 # Read in pathway file as a list
 pathways <- gmtPathways(annotation_file)
+pathways <- pathways[!duplicated(pathways)]
 
 # Remove annotation source information from pathway names
 names(pathways) <- gsub("\\%..*", "", names(pathways))
@@ -153,12 +154,11 @@ for (i in 1:ncol(score_run)) {
 
   # Run GSEA
   set.seed(SET_SEED)
-  gsea <- fgsea(stats = gi_rank, pathways = pathways2)
+  gsea <- fgsea(stats = gi_rank, pathways = pathways2, eps = 0)
 
   # Filtering for significant pathways
   gsea_sig <- as.data.table(filter(gsea, padj <= SIG_FDR))
-  n_sig <- nrow(gsea_sig)
-  cat(sprintf("* Found %i enriched pathways (FDR <= %g)\n", n_sig, SIG_FDR))
+  cat(sprintf("* Found %i enriched pathways (FDR <= %g)\n", nrow(gsea_sig), SIG_FDR))
 
   # Separate by negative / positive enrichment
   gsea_pos <- gsea_sig[NES > 0][order(NES, decreasing = TRUE),]
@@ -187,8 +187,12 @@ for (i in 1:ncol(score_run)) {
     # Store results in list, if results exist
     # One sheet per set
     res <- list()
-    if (nrow(gsea_pos)) { res[["positive"]] <- gsea_pos }
-    if (nrow(gsea_neg)) { res[["negative"]] <- gsea_neg }
+    if (nrow(gsea_pos)) {
+      res[["positive"]] <- gsea_pos
+    }
+    if (nrow(gsea_neg)) {
+      res[["negative"]] <- gsea_neg
+    }
 
     # Write out results to file
     table_file <- sprintf("%s_pathway_table.xlsx", out_file)
@@ -196,7 +200,7 @@ for (i in 1:ncol(score_run)) {
     write.xlsx(res, file = table_file)
 
     ######
-    # LEADING EDGE PLOT
+    # PREPARE DATA FOR PLOTTING
     ######
 
     # Combine positive and negative results
@@ -213,11 +217,46 @@ for (i in 1:ncol(score_run)) {
     # Get character vector of pathways
     pathway_res <- as.character(unlist(gsea_res[,"pathway"]))
 
-    # Add column to gsea_res of number of leadingEdge genes in pathway
-    gsea_res$count <- ""
-    for (i in 1:nrow(gsea_res)) {
-      gsea_res$count[i] <- length(as.character(unlist(gsea_res[i,"leadingEdge"])))
-    }
+    # Prepare data for heatmap
+    gsea_heatmap <- gsea_res$leadingEdge
+    names(gsea_heatmap) <- gsea_res$pathway
+
+    # Melt to dataframe
+    gsea_heatmap <- melt(gsea_heatmap)
+    colnames(gsea_heatmap) <- c("Gene", "Pathway")
+    gsea_heatmap$Gene <- as.character(gsea_heatmap$Gene)
+
+    # Transform score vector to df and merge with gsea_heatmap
+    gi_rank_df <- as.data.frame(gi_rank)
+    gi_rank_df$Gene <- rownames(gi_rank_df)
+    rownames(gi_rank_df) <- NULL
+    colnames(gi_rank_df)[1] <- "gene_score"
+
+    # Prevent merge from re-arranging columns using join
+    gsea_heatmap <- left_join(gsea_heatmap, gi_rank_df, by = "Gene")
+
+    # Add additional enrichment info
+    gsea_cols <- gsea_res[,c("pathway", "padj", "NES", "size", "sign")]
+    colnames(gsea_cols) <- c("Pathway", "FDR", "NES", "Size", "Sign")
+    gsea_heatmap <- left_join(gsea_heatmap, gsea_cols, by = "Pathway")
+
+    # Prevent ggplot from re-arranging pathway/gene levels
+    gsea_heatmap$Pathway <- factor(gsea_heatmap$Pathway, levels = unique(gsea_res$pathway))
+    gsea_heatmap$Gene <- factor(gsea_heatmap$Gene, levels = unique(gsea_heatmap$Gene))
+
+    # Prepare data for dotplot
+    # Grab top 20 positive / negative enrichments
+    top_pos <- gsea_pos[order(gsea_pos$NES, decreasing = TRUE),][1:20,]
+    top_neg <- gsea_neg[order(gsea_neg$NES, decreasing = FALSE),][1:20,]
+    gsea_dotplot <- rbind(top_pos, top_neg)
+    gsea_dotplot <- na.omit(gsea_dotplot)
+
+    # Convert Sign to factor to prevent unwanted point re-arranging
+    gsea_dotplot$sign <- factor(gsea_dotplot$sign, levels = unique(gsea_dotplot$sign))
+
+    ######
+    # LEADING EDGE PLOT
+    ######
 
     # Draw out
     plot_file1 <- sprintf("%s_leadingEdge.pdf", out_file)
@@ -236,41 +275,15 @@ for (i in 1:ncol(score_run)) {
     # HEATMAP
     ######
 
-    # Prepare data
-    gsea_plot <- gsea_res$leadingEdge
-    names(gsea_plot) <- gsea_res$pathway
-
-    # Melt to dataframe for ggplot
-    gsea_plot <- melt(gsea_plot)
-    colnames(gsea_plot) <- c("Gene", "Pathway")
-    gsea_plot$Gene <- as.character(gsea_plot$Gene)
-
-    # Transform score vector to df and merge with gsea result df
-    gi_rank_df <- as.data.frame(gi_rank)
-    gi_rank_df$Gene <- rownames(gi_rank_df)
-    rownames(gi_rank_df) <- NULL
-    colnames(gi_rank_df)[1] <- "gene_score"
-
-    # Prevent merge from re-arranging columns using join (2018-11-08)
-    final <- left_join(gsea_plot, gi_rank_df, by = "Gene")
-
-    # Add additional enrichment info
-    gsea_sign <- gsea_res[,c("pathway", "padj", "NES", "size", "count", "sign")]
-    colnames(gsea_sign) <- c("Pathway", "FDR", "NES", "Size", "Count", "Sign")
-    final <- left_join(final, gsea_sign, by = "Pathway")
-
-    # Prevent ggplot from re-arranging pathway/gene levels
-    final$Pathway <- factor(final$Pathway, levels = unique(gsea_res$pathway))
-    final$Gene <- factor(final$Gene, levels = unique(final$Gene))
-
     # Draw out heatmaps
     plot_file2 <- sprintf("%s_heatmap.pdf", out_file)
     cat(sprintf("  => plotting enrichment heatmap to %s.\n", basename(plot_file2)))
 
     # Plot
-    p2 <- ggplot(final, aes(Gene, Pathway)) +
+    p2 <- ggplot(gsea_heatmap, aes(Gene, Pathway)) +
           facet_grid(. ~ Sign, scales = "free", space = "free") +
           geom_tile(aes(fill = gene_score), colour = "white") +
+          labs(x = "Leading edge gene", y = "Pathway", title = query_i) +
           scale_fill_gradient2(low = muted("#386cb0"), high = "#ef3b2c") +
           theme_bw(base_size = 14) +
           theme(panel.background = element_rect(fill = "white"),
@@ -280,111 +293,59 @@ for (i in 1:ncol(score_run)) {
                 axis.text.y = element_text(size = 8, hjust = 1, vjust = 1, face = "bold"),
                 axis.title = element_text(size = 12),
                 axis.ticks = element_blank(),
-                legend.title = element_text(face = "bold", size = 10)) +
-          ggtitle(query_i) +
-          labs(x = "Leading edge gene", y = "Pathway")
+                legend.title = element_text(face = "bold", size = 10))
 
-    #ggsave(plot_file2, p2, width = length(unique(final$Gene)) * 0.7,
-    #       height = length(unique(final$Pathway)) * 0.2, limitsize = FALSE)
+    ggsave(plot_file2, p2, width = length(unique(gsea_heatmap$Gene)) * 0.7,
+           height = length(unique(gsea_heatmap$Pathway)) * 0.2, limitsize = FALSE)
 
     ######
     # DOTPLOT
     ######
 
-    # Remove Gene and score_score columns from final to get unique set of pathways
-    final2 <- unique(final[,-c(1,3)])
-    final2$Pathway <- as.character(final2$Pathway)
+    # Workaround to split long pathway names on multiple lines
+    # (scales wrap_format() best suited for x axis labels)
+    path <- gsea_dotplot$pathway
+    path <- unlist(lapply(path, function(x) {
+      x_split <- unlist(strsplit(x, ""))
+      x_ins <- grep(" ", x_split)[which(grep(" ", x_split) > 50)][1]
+      if (is.na(x_ins)) {
+        return(x)
+      } else {
+        substr(x, x_ins, x_ins) <- "\n"
+        return(x)
+      }
+    }))
 
-    # Calculate geneRatio
-    final2$geneRatio <- as.numeric(final2$Count) / as.numeric(final2$Size)
-
-    # Uncapitalize pathway names
-    final2$Pathway <- tolower(final2$Pathway)
-    final2$Pathway <- capitalize(final2$Pathway)
-
-    # Convert Sign to factor format to prevent unwanted point re-arranging
-    final2$Sign <- factor(final2$Sign, levels = unique(final2$Sign))
-
-    # Loop through negative/positive enrichments
-    for (res_sign in unique(final2$Sign)) {
-
-      # Filter for GI data corresponding to sign
-      to_plot <- filter(final2, Sign == res_sign)
-
-      # Set point fill
-      p_fill <- ifelse(res_sign == "Negative", "cornflowerblue", "goldenrod1")
-
-      # Plot dot plot
-      p3 <- ggplot(to_plot, aes(x = NES,
-                                y = fct_reorder(Pathway, NES),
-                                fill = Sign)) +
-              geom_point(aes(size = -log10(FDR)), shape = 21, colour = "black") +
-              labs(y = NULL, x = "Fold enrichment",
-                   title = sprintf("%s (%s)", query_i, annotation_source),
-                   fill = "Genetic interaction",
-                   size = "-log10(FDR)") +
-              scale_fill_manual(values = p_fill) +
-              theme_few(base_size = 14) +
-              theme(plot.title = element_text(hjust = 0.5),
-                    legend.title = element_text(size = 10),
-                    legend.text = element_text(size = 10),
-                    legend.key.size = unit(0.1, "line"),
-                    panel.grid.major.y = element_line(linetype = "dotted",
-                                                      colour = "lightgrey"),
-                    aspect.ratio = 10/3)
-
-      # Estimate plot height
-      p_height <- length(unique(to_plot$Pathway)) * 0.25
-
-      # Draw out plots
-      plot_file3 <- sprintf("%s_dotplot_%s.pdf", out_file, res_sign)
-      cat(sprintf("  => plotting enrichment dotplot to %s.\n", basename(plot_file3)))
-      ggsave(plot_file3, p3, width = 15, height = p_height, limitsize = FALSE)
-    }
-
-    ######
-    # MERGED DOTPLOT
-    ######
-
-    # Grab top 20 positive / negative enrichments
-    top_pos <- final2[order(final2$NES, decreasing = TRUE),][1:20,]
-    top_neg <- final2[order(final2$NES, decreasing = FALSE),][1:20,]
-    top_plot <- rbind(top_pos, top_neg)
+    # Modify gsea_dotplot pathway names
+    gsea_dotplot$pathway <- path
 
     # Set point fill
-    p_fill <- unique(ifelse(top_plot$Sign == "Negative", "cornflowerblue", "goldenrod1"))
-
-    # Set x-axis limits so points aren't cut off from plot window
-    xmin <- floor(min(top_plot$NES))
-    xmax <- ceiling(max(top_plot$NES))
+    p_fill <- unique(ifelse(gsea_dotplot$sign == "Negative", "cornflowerblue", "goldenrod1"))
 
     # Plot merged dot plot
-    p4 <- ggplot(top_plot, aes(x = NES,
-                               y = fct_reorder(Pathway, NES),
-                               fill = Sign)) +
-            geom_point(aes(size = -log10(FDR)), shape = 21, colour = "black") +
-            geom_vline(xintercept = 0, linetype = "dotted", colour = "black", size = 0.75) +
-            labs(y = NULL, x = "Fold enrichment",
-                 title = sprintf("%s (%s)", query_i, annotation_source),
-                 fill = "Genetic interaction",
-                 size = "-log10(FDR)") +
-            xlim(xmin, xmax) +
-            scale_fill_manual(values = p_fill) +
-            theme_few(base_size = 14) +
-            theme(plot.title = element_text(hjust = 0.5),
-                  legend.title = element_text(size = 10),
-                  legend.text = element_text(size = 10),
-                  legend.key.size = unit(0.1, "line"),
-                  panel.grid.major.y = element_line(linetype = "dotted",
-                                                    colour = "lightgrey"),
-                  aspect.ratio = 10/3)
+    p3 <- gsea_dotplot %>%
+      mutate(log10FDR = -log10(padj)) %>%
+      ggplot(aes(x = log10FDR, y = fct_reorder(pathway, log10FDR), fill = sign)) +
+        facet_grid("sign", scales = "free", space = "free") +
+        geom_point(aes(size = abs(NES)), shape = 21, colour = "black") +
+        #geom_vline(xintercept = -log10(SIG_FDR), linetype = "dotted", colour = "black", size = 0.75) +
+        labs(y = NULL, x = "-log10(FDR)",
+             title = sprintf("%s (%s)", query_i, annotation_source),
+             fill = "Genetic interaction",
+             size = "Normalized\nenrichment\nscore") +
+        scale_fill_manual(values = p_fill, guide = FALSE) +
+        theme_clean(base_size = 14) +
+        theme(plot.title = element_text(hjust = 0.5),
+              legend.title = element_text(size = 10),
+              legend.text = element_text(size = 10),
+              legend.key.size = unit(0.1, "line"))
 
       # Estimate plot height
-      p_height <- length(unique(top_plot$Pathway)) * 0.25
+      #p_height <- length(unique(gsea_dotplot$pathway)) * 0.25
 
       # Draw out plot
-      plot_file4 <- sprintf("%s_dotplot_merged.pdf", out_file)
-      cat(sprintf("  => plotting enrichment dotplot to %s.\n", basename(plot_file4)))
-      ggsave(plot_file4, p4, width = 15, height = p_height, limitsize = FALSE)
+      plot_file3 <- sprintf("%s_dotplot.pdf", out_file)
+      cat(sprintf("  => plotting enrichment dotplot to %s.\n", basename(plot_file3)))
+      ggsave(plot_file3, p3, width = 8, height = 9.5, limitsize = FALSE)
   }
 }
